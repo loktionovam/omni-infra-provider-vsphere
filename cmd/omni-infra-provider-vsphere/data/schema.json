@@ -15,6 +15,14 @@
       "minimum": 10,
       "description": "In GiB"
     },
+    "additional_disks": {
+      "type": "array",
+      "description": "Additional data disk sizes in GiB. Disks are created on the selected datastore.",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
     "network": {
       "type": "string",
       "description": "network name"

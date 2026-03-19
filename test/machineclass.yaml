@@ -9,6 +9,9 @@ spec:
       cpu: 2
       memory: 4096 # in MB
       disk_size: 10 # in GB
+      additional_disks:
+        - 20 # in GB
+        - 50 # in GB
       network: "VM Network"
       datastore: "datastore1"
       datacenter: "Datacenter"

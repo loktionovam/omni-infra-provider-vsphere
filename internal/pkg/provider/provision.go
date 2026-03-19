@@ -127,6 +127,87 @@ func resizeDisk(ctx context.Context, vm *object.VirtualMachine, diskSizeGiB uint
 	return nil
 }
 
+func ensureAdditionalDiskController(devices object.VirtualDeviceList) (types.BaseVirtualController, []types.BaseVirtualDevice, error) {
+	controller, err := devices.FindDiskController("")
+	if err == nil {
+		return controller, nil, nil
+	}
+
+	controllerDevice, err := devices.CreateSCSIController("pvscsi")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create SCSI controller: %w", err)
+	}
+
+	controller, ok := controllerDevice.(types.BaseVirtualController)
+	if !ok {
+		return nil, nil, fmt.Errorf("created device is not a virtual controller")
+	}
+
+	if controller.GetVirtualController().BusNumber < 0 {
+		return nil, nil, fmt.Errorf("no available SCSI bus numbers for additional disks")
+	}
+
+	return controller, []types.BaseVirtualDevice{controllerDevice}, nil
+}
+
+func buildAdditionalDiskDevices(devices object.VirtualDeviceList, datastoreRef types.ManagedObjectReference, diskSizesGiB []uint64) ([]types.BaseVirtualDevice, error) {
+	if len(diskSizesGiB) == 0 {
+		return nil, nil
+	}
+
+	addDevices := make([]types.BaseVirtualDevice, 0, len(diskSizesGiB)+1)
+
+	for i, diskSizeGiB := range diskSizesGiB {
+		if diskSizeGiB == 0 {
+			return nil, fmt.Errorf("additional_disks[%d]: size must be greater than zero", i)
+		}
+
+		controller, newDevices, err := ensureAdditionalDiskController(devices)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(newDevices) > 0 {
+			addDevices = append(addDevices, newDevices...)
+			devices = append(devices, newDevices...)
+		}
+
+		disk := devices.CreateDisk(controller, datastoreRef, "")
+		disk.CapacityInBytes = int64(diskSizeGiB * GiB)
+
+		addDevices = append(addDevices, disk)
+		devices = append(devices, disk)
+	}
+
+	return addDevices, nil
+}
+
+func addAdditionalDisks(ctx context.Context, vm *object.VirtualMachine, datastoreRef types.ManagedObjectReference, diskSizesGiB []uint64) error {
+	if len(diskSizesGiB) == 0 {
+		return nil
+	}
+
+	devices, err := vm.Device(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get VM devices: %w", err)
+	}
+
+	addDevices, err := buildAdditionalDiskDevices(devices, datastoreRef, diskSizesGiB)
+	if err != nil {
+		return fmt.Errorf("failed to build additional disk devices: %w", err)
+	}
+
+	if len(addDevices) == 0 {
+		return nil
+	}
+
+	if err := vm.AddDevice(ctx, addDevices...); err != nil {
+		return fmt.Errorf("failed to add additional disks: %w", err)
+	}
+
+	return nil
+}
+
 // normalizePEMCert ensures a PEM certificate string uses proper newlines and
 // 64-character base64 line wrapping. The Omni UI may deliver the cert as a
 // single line with spaces in place of newlines; this function reconstructs
@@ -318,6 +399,7 @@ func (p *Provisioner) ProvisionSteps() []provision.Step[*resources.Machine] {
 					zap.Uint("cpu", data.CPU),
 					zap.Uint("memory", data.Memory),
 					zap.Uint64("disk_size", data.DiskSize),
+					zap.Int("additional_disk_count", len(data.AdditionalDisks)),
 					zap.Bool("ca_cert_set", data.CACert != ""),
 				)
 
@@ -460,6 +542,14 @@ func (p *Provisioner) ProvisionSteps() []provision.Step[*resources.Machine] {
 
 					if err := resizeDisk(ctx, vm, data.DiskSize); err != nil {
 						return provision.NewRetryErrorf(time.Second*10, "failed to resize disk: %w", err)
+					}
+				}
+
+				if len(data.AdditionalDisks) > 0 {
+					logger.Info("adding VM disks", zap.String("name", vmName), zap.Uint64s("additional_disk_sizes_gib", data.AdditionalDisks))
+
+					if err := addAdditionalDisks(ctx, vm, datastoreRef, data.AdditionalDisks); err != nil {
+						return provision.NewRetryErrorf(time.Second*10, "failed to add additional disks: %w", err)
 					}
 				}
 

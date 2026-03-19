@@ -6,14 +6,15 @@ package provider
 
 // Data is the provider custom machine config.
 type Data struct {
-	Datacenter   string `yaml:"datacenter"`
-	ResourcePool string `yaml:"resource_pool"`
-	Datastore    string `yaml:"datastore"`
-	Network      string `yaml:"network"`
-	Template     string `yaml:"template"`  // VM template name to clone from
-	Folder       string `yaml:"folder"`    // VM folder path (optional)
-	CACert       string `yaml:"ca_cert"`   // PEM-encoded CA certificate (optional)
-	DiskSize     uint64 `yaml:"disk_size"` // GiB
-	CPU          uint   `yaml:"cpu"`
-	Memory       uint   `yaml:"memory"` // MiB
+	Datacenter      string   `yaml:"datacenter"`
+	ResourcePool    string   `yaml:"resource_pool"`
+	Datastore       string   `yaml:"datastore"`
+	Network         string   `yaml:"network"`
+	Template        string   `yaml:"template"`                   // VM template name to clone from
+	Folder          string   `yaml:"folder"`                     // VM folder path (optional)
+	CACert          string   `yaml:"ca_cert"`                    // PEM-encoded CA certificate (optional)
+	DiskSize        uint64   `yaml:"disk_size"`                  // GiB
+	AdditionalDisks []uint64 `yaml:"additional_disks,omitempty"` // GiB
+	CPU             uint     `yaml:"cpu"`
+	Memory          uint     `yaml:"memory"` // MiB
 }
