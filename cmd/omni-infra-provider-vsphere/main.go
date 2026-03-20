@@ -149,12 +149,16 @@ var rootCmd = &cobra.Command{
 			clientOptions = append(clientOptions, client.WithServiceAccount(cfg.serviceAccountKey))
 		}
 
+		healthChecker := provider.NewHealthChecker(provisioner)
+
 		return ip.Run(
 			cmd.Context(),
-			logger, infra.WithOmniEndpoint(cfg.omniAPIEndpoint),
+			logger,
+			infra.WithOmniEndpoint(cfg.omniAPIEndpoint),
 			infra.WithClientOptions(
 				clientOptions...,
 			),
+			infra.WithHealthCheckFunc(healthChecker.Check),
 			infra.WithEncodeRequestIDsIntoTokens(),
 		)
 	},

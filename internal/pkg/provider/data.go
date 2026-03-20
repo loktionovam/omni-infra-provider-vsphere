@@ -20,6 +20,8 @@ type Data struct {
 	Memory                 uint                   `yaml:"memory"` // MiB
 	PlacementMode          string                 `yaml:"placement_mode,omitempty"`
 	PlacementStrategy      string                 `yaml:"placement_strategy,omitempty"`
+	SpreadGroup            string                 `yaml:"spread_group,omitempty"`
+	HostAntiAffinity       string                 `yaml:"host_anti_affinity,omitempty"`
 	HostSelector           HostSelector           `yaml:"host_selector,omitempty"`
 	LocalDatastoreSelector LocalDatastoreSelector `yaml:"local_datastore_selector,omitempty"`
 	BalancedWeights        BalancedWeights        `yaml:"balanced_weights,omitempty"`

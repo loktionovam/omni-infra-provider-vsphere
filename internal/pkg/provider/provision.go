@@ -500,6 +500,15 @@ func (p *Provisioner) ProvisionSteps() []provision.Step[*resources.Machine] {
 
 				combinedConfigB64 := base64.StdEncoding.EncodeToString(combinedConfig.Bytes())
 
+				extraConfig := []types.BaseOptionValue{
+					&types.OptionValue{Key: "disk.enableUUID", Value: "TRUE"},
+					&types.OptionValue{Key: "guestinfo.talos.config", Value: combinedConfigB64},
+				}
+
+				if spreadGroup := strings.TrimSpace(data.SpreadGroup); spreadGroup != "" {
+					extraConfig = append(extraConfig, &types.OptionValue{Key: extraConfigSpreadGroupKey, Value: spreadGroup})
+				}
+
 				// Clone the VM from template
 				cloneSpec := types.VirtualMachineCloneSpec{
 					Location: types.VirtualMachineRelocateSpec{
@@ -508,12 +517,9 @@ func (p *Provisioner) ProvisionSteps() []provision.Step[*resources.Machine] {
 						Host:      placement.HostRef,
 					},
 					Config: &types.VirtualMachineConfigSpec{
-						NumCPUs:  int32(data.CPU),
-						MemoryMB: int64(data.Memory),
-						ExtraConfig: []types.BaseOptionValue{
-							&types.OptionValue{Key: "disk.enableUUID", Value: "TRUE"},
-							&types.OptionValue{Key: "guestinfo.talos.config", Value: combinedConfigB64},
-						},
+						NumCPUs:     int32(data.CPU),
+						MemoryMB:    int64(data.Memory),
+						ExtraConfig: extraConfig,
 					},
 					PowerOn: false,
 				}

@@ -122,3 +122,76 @@ func TestMatchesHostSelectorRequiresConnectedByDefault(t *testing.T) {
 		t.Fatal("expected disconnected host to be rejected by default")
 	}
 }
+
+func TestApplyHostAntiAffinityPolicyPreferredPrefersUnusedHosts(t *testing.T) {
+	candidates := []placementCandidate{
+		{HostName: "esxi-07"},
+		{HostName: "esxi-08"},
+		{HostName: "esxi-09"},
+	}
+
+	filtered, err := applyHostAntiAffinityPolicy(candidates, map[string]int{
+		"esxi-07": 1,
+		"esxi-08": 0,
+		"esxi-09": 2,
+	}, HostAntiAffinityPreferred)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if len(filtered) != 1 || filtered[0].HostName != "esxi-08" {
+		t.Fatalf("expected only esxi-08 to remain, got %+v", filtered)
+	}
+}
+
+func TestApplyHostAntiAffinityPolicyPreferredFallsBackWhenAllHostsUsed(t *testing.T) {
+	candidates := []placementCandidate{
+		{HostName: "esxi-07"},
+		{HostName: "esxi-08"},
+	}
+
+	filtered, err := applyHostAntiAffinityPolicy(candidates, map[string]int{
+		"esxi-07": 1,
+		"esxi-08": 1,
+	}, HostAntiAffinityPreferred)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if len(filtered) != len(candidates) {
+		t.Fatalf("expected preferred policy to fall back to all candidates, got %+v", filtered)
+	}
+}
+
+func TestApplyHostAntiAffinityPolicyRequiredRejectsUsedHosts(t *testing.T) {
+	candidates := []placementCandidate{
+		{HostName: "esxi-07"},
+		{HostName: "esxi-08"},
+	}
+
+	_, err := applyHostAntiAffinityPolicy(candidates, map[string]int{
+		"esxi-07": 1,
+		"esxi-08": 1,
+	}, HostAntiAffinityRequired)
+	if err == nil {
+		t.Fatal("expected required host anti-affinity to fail when all hosts are already used")
+	}
+}
+
+func TestVMBelongsToSpreadGroup(t *testing.T) {
+	vm := mo.VirtualMachine{
+		Config: &types.VirtualMachineConfigInfo{
+			ExtraConfig: []types.BaseOptionValue{
+				&types.OptionValue{Key: extraConfigSpreadGroupKey, Value: "omni-contrib-control-plane"},
+			},
+		},
+	}
+
+	if !vmBelongsToSpreadGroup(vm, "omni-contrib-control-plane") {
+		t.Fatal("expected VM to match spread group")
+	}
+
+	if vmBelongsToSpreadGroup(vm, "other-group") {
+		t.Fatal("expected VM not to match a different spread group")
+	}
+}

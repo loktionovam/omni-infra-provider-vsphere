@@ -25,6 +25,11 @@ const (
 	PlacementStrategyLeastVMs      = "least_vms"
 	PlacementStrategyMostFreeSpace = "most_free_space"
 	PlacementStrategyBalanced      = "balanced"
+
+	HostAntiAffinityPreferred = "preferred"
+	HostAntiAffinityRequired  = "required"
+
+	extraConfigSpreadGroupKey = "omni.spread.group"
 )
 
 var defaultBalancedWeights = BalancedWeights{
@@ -111,6 +116,11 @@ func resolveAutoLocalPlacement(ctx context.Context, client *govmomi.Client, find
 	}
 
 	candidates, err := buildAutoLocalPlacementCandidates(ctx, client, hosts, data)
+	if err != nil {
+		return vmPlacement{}, err
+	}
+
+	candidates, err = applyHostAntiAffinity(ctx, client, hosts, candidates, data)
 	if err != nil {
 		return vmPlacement{}, err
 	}
@@ -212,6 +222,131 @@ func buildAutoLocalPlacementCandidates(ctx context.Context, client *govmomi.Clie
 	}
 
 	return candidates, nil
+}
+
+func applyHostAntiAffinity(ctx context.Context, client *govmomi.Client, hosts []*object.HostSystem, candidates []placementCandidate, data Data) ([]placementCandidate, error) {
+	policy := normalizeHostAntiAffinity(data.HostAntiAffinity)
+	if policy == "" {
+		return candidates, nil
+	}
+
+	spreadGroup := strings.TrimSpace(data.SpreadGroup)
+	if spreadGroup == "" {
+		return nil, fmt.Errorf("spread_group is required when host_anti_affinity is set")
+	}
+
+	hostUsage, err := countSpreadGroupVMsByHost(ctx, client, hosts, spreadGroup)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered, err := applyHostAntiAffinityPolicy(candidates, hostUsage, policy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply host_anti_affinity=%q for spread_group %q: %w", policy, spreadGroup, err)
+	}
+
+	return filtered, nil
+}
+
+func countSpreadGroupVMsByHost(ctx context.Context, client *govmomi.Client, hosts []*object.HostSystem, spreadGroup string) (map[string]int, error) {
+	hostUsage := make(map[string]int, len(hosts))
+
+	for _, host := range hosts {
+		var hostMO mo.HostSystem
+
+		if err := host.Properties(ctx, host.Reference(), []string{"vm"}, &hostMO); err != nil {
+			return nil, fmt.Errorf("failed to get VM inventory for host %q: %w", host.Reference().Value, err)
+		}
+
+		for _, vmRef := range hostMO.Vm {
+			vm := object.NewVirtualMachine(client.Client, vmRef)
+
+			var vmMO mo.VirtualMachine
+
+			if err := vm.Properties(ctx, vmRef, []string{"config.extraConfig"}, &vmMO); err != nil {
+				return nil, fmt.Errorf("failed to get extra config for VM %q: %w", vmRef.Value, err)
+			}
+
+			if vmBelongsToSpreadGroup(vmMO, spreadGroup) {
+				hostUsage[host.Reference().Value]++
+			}
+		}
+	}
+
+	return hostUsage, nil
+}
+
+func vmBelongsToSpreadGroup(vm mo.VirtualMachine, spreadGroup string) bool {
+	if vm.Config == nil {
+		return false
+	}
+
+	value, ok := extraConfigStringValue(vm.Config.ExtraConfig, extraConfigSpreadGroupKey)
+
+	return ok && value == spreadGroup
+}
+
+func extraConfigStringValue(values []types.BaseOptionValue, key string) (string, bool) {
+	for _, value := range values {
+		optionValue := value.GetOptionValue()
+		if optionValue == nil || optionValue.Key != key {
+			continue
+		}
+
+		switch typedValue := optionValue.Value.(type) {
+		case string:
+			return typedValue, true
+		case nil:
+			return "", true
+		default:
+			return fmt.Sprint(typedValue), true
+		}
+	}
+
+	return "", false
+}
+
+func applyHostAntiAffinityPolicy(candidates []placementCandidate, hostUsage map[string]int, policy string) ([]placementCandidate, error) {
+	unusedHostCandidates := filterCandidatesByUnusedHosts(candidates, hostUsage)
+
+	switch policy {
+	case HostAntiAffinityPreferred:
+		if len(unusedHostCandidates) > 0 {
+			return unusedHostCandidates, nil
+		}
+
+		return candidates, nil
+	case HostAntiAffinityRequired:
+		if len(unusedHostCandidates) == 0 {
+			return nil, fmt.Errorf("no candidate hosts remain")
+		}
+
+		return unusedHostCandidates, nil
+	default:
+		return nil, fmt.Errorf("unsupported host_anti_affinity %q", policy)
+	}
+}
+
+func filterCandidatesByUnusedHosts(candidates []placementCandidate, hostUsage map[string]int) []placementCandidate {
+	filtered := make([]placementCandidate, 0, len(candidates))
+
+	for _, candidate := range candidates {
+		if hostUsage[placementCandidateHostKey(candidate)] > 0 {
+			continue
+		}
+
+		filtered = append(filtered, candidate)
+	}
+
+	return filtered
+}
+
+func placementCandidateHostKey(candidate placementCandidate) string {
+	if candidate.HostRef.Value != "" {
+		return candidate.HostRef.Value
+	}
+
+	return candidate.HostName
 }
 
 func matchesHostSelector(host mo.HostSystem, hostName string, nameRegex *regexp.Regexp, selector HostSelector) bool {
@@ -505,6 +640,10 @@ func normalizePlacementStrategy(strategy string) string {
 	}
 
 	return strategy
+}
+
+func normalizeHostAntiAffinity(policy string) string {
+	return strings.ToLower(strings.TrimSpace(policy))
 }
 
 func nearlyEqual(a, b float64) bool {

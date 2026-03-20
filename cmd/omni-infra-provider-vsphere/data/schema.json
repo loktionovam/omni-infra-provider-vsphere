@@ -44,6 +44,18 @@
       ],
       "description": "Host/datastore scoring strategy used when placement_mode is auto_local."
     },
+    "spread_group": {
+      "type": "string",
+      "description": "Optional host spread group identifier. Use a unique value per cluster/role when the same machine class can be reused by multiple clusters."
+    },
+    "host_anti_affinity": {
+      "type": "string",
+      "enum": [
+        "preferred",
+        "required"
+      ],
+      "description": "Optional host anti-affinity policy for placement_mode=auto_local. preferred avoids hosts already used by the same spread_group when possible, required rejects them."
+    },
     "host_selector": {
       "type": "object",
       "description": "Filters candidate ESXi hosts when placement_mode is auto_local.",
