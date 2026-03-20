@@ -430,27 +430,24 @@ func (p *Provisioner) ProvisionSteps() []provision.Step[*resources.Machine] {
 					}
 				}
 
-				// Find the resource pool
-				resourcePool, err := finder.ResourcePool(ctx, data.ResourcePool)
-				if err != nil {
-					return provision.NewRetryErrorf(time.Second*10, "failed to find resource pool %q: %w", data.ResourcePool, err)
-				}
-
 				// Find the template VM
 				template, err := finder.VirtualMachine(ctx, data.Template)
 				if err != nil {
 					return provision.NewRetryErrorf(time.Second*10, "failed to find template %q: %w", data.Template, err)
 				}
 
-				// Find the datastore
-				datastore, err := finder.Datastore(ctx, data.Datastore)
+				placement, err := resolveVMPlacement(ctx, p.vsphereClient, finder, data)
 				if err != nil {
-					return provision.NewRetryErrorf(time.Second*10, "failed to find datastore %q: %w", data.Datastore, err)
+					return provision.NewRetryErrorf(time.Second*10, "failed to resolve VM placement: %w", err)
 				}
 
-				// Build clone spec
-				resourcePoolRef := resourcePool.Reference()
-				datastoreRef := datastore.Reference()
+				logger.Info("resolved VM placement",
+					zap.String("name", vmName),
+					zap.String("placement_mode", normalizePlacementMode(data.PlacementMode)),
+					zap.String("placement_strategy", normalizePlacementStrategy(data.PlacementStrategy)),
+					zap.String("host", placement.HostName),
+					zap.String("datastore", placement.DatastoreName),
+				)
 
 				// Prepare join config and hostname patches
 				// We start first with creating a standard patch for the hostname.
@@ -506,8 +503,9 @@ func (p *Provisioner) ProvisionSteps() []provision.Step[*resources.Machine] {
 				// Clone the VM from template
 				cloneSpec := types.VirtualMachineCloneSpec{
 					Location: types.VirtualMachineRelocateSpec{
-						Pool:      &resourcePoolRef,
-						Datastore: &datastoreRef,
+						Pool:      &placement.ResourcePoolRef,
+						Datastore: &placement.DatastoreRef,
+						Host:      placement.HostRef,
 					},
 					Config: &types.VirtualMachineConfigSpec{
 						NumCPUs:  int32(data.CPU),
@@ -548,7 +546,7 @@ func (p *Provisioner) ProvisionSteps() []provision.Step[*resources.Machine] {
 				if len(data.AdditionalDisks) > 0 {
 					logger.Info("adding VM disks", zap.String("name", vmName), zap.Uint64s("additional_disk_sizes_gib", data.AdditionalDisks))
 
-					if err := addAdditionalDisks(ctx, vm, datastoreRef, data.AdditionalDisks); err != nil {
+					if err := addAdditionalDisks(ctx, vm, placement.DatastoreRef, data.AdditionalDisks); err != nil {
 						return provision.NewRetryErrorf(time.Second*10, "failed to add additional disks: %w", err)
 					}
 				}

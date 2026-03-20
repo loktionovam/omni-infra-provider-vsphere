@@ -15,12 +15,88 @@
       "minimum": 10,
       "description": "In GiB"
     },
+    "cluster": {
+      "type": "string",
+      "description": "Cluster name. Required when placement_mode is auto_local."
+    },
     "additional_disks": {
       "type": "array",
       "description": "Additional data disk sizes in GiB. Disks are created on the selected datastore.",
       "items": {
         "type": "integer",
         "minimum": 1
+      }
+    },
+    "placement_mode": {
+      "type": "string",
+      "enum": [
+        "explicit",
+        "auto_local"
+      ],
+      "description": "Placement mode. Omit or use explicit to preserve the legacy direct datastore/resource pool placement."
+    },
+    "placement_strategy": {
+      "type": "string",
+      "enum": [
+        "least_vms",
+        "most_free_space",
+        "balanced"
+      ],
+      "description": "Host/datastore scoring strategy used when placement_mode is auto_local."
+    },
+    "host_selector": {
+      "type": "object",
+      "description": "Filters candidate ESXi hosts when placement_mode is auto_local.",
+      "properties": {
+        "name_regex": {
+          "type": "string",
+          "description": "Optional regular expression to match host names."
+        },
+        "require_connected": {
+          "type": "boolean",
+          "description": "When true or omitted, only connected hosts are considered."
+        },
+        "exclude_maintenance": {
+          "type": "boolean",
+          "description": "When true or omitted, hosts in maintenance mode are excluded."
+        }
+      }
+    },
+    "local_datastore_selector": {
+      "type": "object",
+      "description": "Filters candidate local datastores when placement_mode is auto_local.",
+      "properties": {
+        "name_regex": {
+          "type": "string",
+          "description": "Optional regular expression to match local datastore names."
+        },
+        "min_free_space_gib": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Additional free space to keep on the selected datastore after placement, in GiB."
+        }
+      }
+    },
+    "balanced_weights": {
+      "type": "object",
+      "description": "Optional weights for placement_strategy=balanced. Weights are normalized automatically.",
+      "properties": {
+        "free_space": {
+          "type": "number",
+          "minimum": 0
+        },
+        "vm_count": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cpu_usage": {
+          "type": "number",
+          "minimum": 0
+        },
+        "memory_usage": {
+          "type": "number",
+          "minimum": 0
+        }
       }
     },
     "network": {
@@ -56,7 +132,8 @@
     "cpu",
     "memory",
     "disk_size",
-    "datastore",
-    "network"
+    "network",
+    "datacenter",
+    "template"
   ]
 }

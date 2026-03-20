@@ -140,9 +140,11 @@ COPY --from=unit-tests-run /src/coverage.txt /coverage-unit-tests.txt
 FROM base AS omni-infra-provider-vsphere-linux-amd64-build
 COPY --from=generate / /
 WORKDIR /src/cmd/omni-infra-provider-vsphere
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 ARG GO_BUILDFLAGS
 ARG GO_LDFLAGS
-RUN --mount=type=cache,target=/root/.cache/go-build,id=omni-infra-provider-vsphere/root/.cache/go-build --mount=type=cache,target=/go/pkg,id=omni-infra-provider-vsphere/go/pkg go build ${GO_BUILDFLAGS} -ldflags "${GO_LDFLAGS}" -o /omni-infra-provider-vsphere-linux-amd64
+RUN --mount=type=cache,target=/root/.cache/go-build,id=omni-infra-provider-vsphere/root/.cache/go-build --mount=type=cache,target=/go/pkg,id=omni-infra-provider-vsphere/go/pkg GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build ${GO_BUILDFLAGS} -ldflags "${GO_LDFLAGS}" -o /omni-infra-provider-vsphere-linux-amd64
 
 FROM scratch AS omni-infra-provider-vsphere-linux-amd64
 COPY --from=omni-infra-provider-vsphere-linux-amd64-build /omni-infra-provider-vsphere-linux-amd64 /omni-infra-provider-vsphere-linux-amd64
@@ -159,4 +161,3 @@ COPY --from=image-fhs / /
 COPY --from=image-ca-certificates / /
 LABEL org.opencontainers.image.source=https://github.com/siderolabs/omni-infra-provider-vsphere
 ENTRYPOINT ["/omni-infra-provider-vsphere"]
-
